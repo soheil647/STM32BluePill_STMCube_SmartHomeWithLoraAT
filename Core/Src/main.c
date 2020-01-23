@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,12 +37,18 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-uint8_t Buffer_tx[10] = {1,2,3,4,5,6,7,8,9,10};
-char Buffer_rx;
+__IO ITStatus UartReady = RESET;
+uint8_t aTxBuffer[10] = {1,2,3,4,5,6,7,8,9,10};
+uint8_t aRxBuffer[RXBUFFERSIZE];
 
-int Flag_Connected = 0;
-int  wait_joint = 0;
-int join_state = 0;
+int Join_Flag = 0;
+int wait_joint = 0;
+int join_state_JOINED = 0;
+int join_state_EVT = 0;
+int Still_Connect = 0;
+
+char* Message;
+char* Lora_Port_Number = "55";
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -59,6 +65,10 @@ static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void Uart_Transmit_AT_Init();
 void Send_First_Data();
+void Check_Connection();
+void Recive_Data();
+void Wait_For_ConnectionStatus();
+void Wait_For_Join();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -66,15 +76,7 @@ void Send_First_Data();
 //void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 //	printf("TX Com");
 //}
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-//	if(Buffer_rx[0] == 'J'){
-//		__NOP();
-//		if(Buffer_rx[1] == 'O'){
-//			while(1);
-//		}
-//	}
-//	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-//}
+
 /* USER CODE END 0 */
 
 /**
@@ -84,7 +86,7 @@ void Send_First_Data();
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  Join_Flag = 0;
   /* USER CODE END 1 */
   
 
@@ -108,21 +110,15 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
 
-
   /* USER CODE BEGIN 2 */
-  for(int Count;Count <= 150 && Flag_Connected==0; Count++){
-	  int Tick_Elapsed1=0;
-	  int Tick_Elapsed2=0;
-	  Uart_Transmit_AT_Init();
-	  HAL_UART_Receive_IT(&huart1, (char *)&Buffer_rx, 1);
-	  Tick_Elapsed1 = HAL_GetTick();
-	  while(Flag_Connected==0){
-		  Tick_Elapsed2 = HAL_GetTick();
-		  HAL_UART_Receive_IT(&huart1, (char *)&Buffer_rx, 1);
-		  if(Tick_Elapsed2 - Tick_Elapsed1 >= 15000000) break;
-	  }
-  }
 
+  //## Init Lora Module And send join command
+  Uart_Transmit_AT_Init();
+
+  //## We should wait for response so we khow it has been joined to Lora network
+  Wait_For_Join();
+
+  //Send 2 data so we make sure we get Lora status on first send and the second one to make sure it has been connected
   Send_First_Data();
   /* USER CODE END 2 */
 
@@ -130,6 +126,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	//Check IF Lora is still connected or not
+	Check_Connection();
+
+	//Wait for Response of Lora if not connected it should Connect again
+	Wait_For_ConnectionStatus();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -147,46 +148,13 @@ int main(void)
 		HAL_GPIO_WritePin(GPIOA, Relay_4_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(GPIOA, Relay_5_Pin, GPIO_PIN_RESET);
 	}
-	  HAL_UART_Receive_IT(&huart1, (char *)&Buffer_rx, 1);
+	  //Recieve What Lora Gets from Server
+	  Recive_Data();
+	  //Wait for Response and Check the message
+
   }
 
   /* USER CODE END 3 */
-}
-void USART1_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART1_IRQn 0 */
-
-  /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
-  /* USER CODE BEGIN USART1_IRQn 1 */
-
-  /*****************************************************/
-	if(Buffer_rx == 'J' && join_state == 0 && wait_joint == 1){
-		join_state = 1;
-	}
-	else if(Buffer_rx == 'O' && join_state == 1 && wait_joint == 1){
-		join_state = 2;
-	}
-	else if(Buffer_rx == 'I' && join_state == 2 && wait_joint == 1){
-		join_state = 3;
-	}
-	else if(Buffer_rx == 'N' && join_state == 3 && wait_joint == 1){
-		join_state = 4;
-	}
-	else if(Buffer_rx == 'E' && join_state == 4 && wait_joint == 1){
-		join_state = 5;
-    }
-	else if(Buffer_rx == 'D' && join_state == 5 && wait_joint == 1){
-		join_state = 0;
-		Flag_Connected = 1;
-    }
-	else if(wait_joint == 1){
-		join_state = 0;
-	}
-  /*****************************************************/
-
-	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-  /* USER CODE END USART1_IRQn 1 */
 }
 
 /**
@@ -239,7 +207,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = 9600;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -268,6 +236,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
@@ -298,42 +267,264 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PB6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
 void Uart_Transmit_AT_Init(){
-	HAL_UART_Transmit(&huart1, "ATZ\r\n", sizeof("ATZ\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("ATZ\r\n"), strlen("ATZ\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT+VER\r\n", sizeof("AT+VER\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+VER=?\r\n"), strlen("AT+VER=?\r"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT\r\n", sizeof("AT\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT+DR=0\r\n", sizeof("AT+DR=0\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+DR=0\r\n"), strlen("AT+DR=0\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT\r\n", sizeof("AT\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT+CLASS=CLASSC\r\n", sizeof("AT+CLASS=CLASSC\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+CLASS=CLASSC\r\n"), strlen("AT+CLASS=CLASSC\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT\r\n", sizeof("AT\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
 	HAL_Delay(2000);
-	HAL_UART_Transmit(&huart1, "AT+JOIN\r\n", sizeof("AT+JOIN\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+JOIN\r\n"), strlen("AT+JOIN\r\n"), 1000);
 	HAL_Delay(2000);
 	wait_joint = 1;
 }
 
-void Check_Connection(){
-	HAL_UART_Transmit(&huart1, "AT+NJS=?\r\n", sizeof("AT+NJS=?\r\n"), 1000);
+void Wait_For_Join(){
+
+	  char* Join_Message = "JOINED";
+	  /*##-1- Put UART peripheral in reception process ###########################*/
+
+	  //Wait for JOINED from Lora
+	  if(HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+
+	  /*##-2- Wait for the end of the Receive ###################################*/
+	  /* While waiting for message to come from the other board, LED1 is
+	     blinking according to the following pattern: a double flash every half-second */
+	  while (UartReady != SET)
+	  {
+		  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(500);
+	  }
+
+	  /* Reset reception flag */
+	  UartReady = RESET;
+
+	  if((char *)aRxBuffer == Join_Message){
+		  Join_Flag = 1;
+	  }
+}
+
+void Wait_For_ConnectionStatus(){
+	  char* Join_Message = "JOINED";
+	  char* Status_Message = "1";
+	  Still_Connect = 0;
+	  /*##-1- Put UART peripheral in reception process ###########################*/
+
+	  //Wait for JOINED from Lora
+	  if(HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+
+	  /*##-2- Wait for the end of the Receive ###################################*/
+	  /* While waiting for message to come from the other board, LED1 is
+	     blinking according to the following pattern: a double flash every half-second */
+	  while (UartReady != SET)
+	  {
+		  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(500);
+	  }
+
+	  /* Reset reception flag */
+	  UartReady = RESET;
+
+	  if((char *)aRxBuffer == Status_Message){
+		  Still_Connect = 1;
+	  }
+	  else {
+		  if(HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+		  	  {
+		  	    Error_Handler();
+		  	  }
+
+		  	  /*##-2- Wait for the end of the Receive ###################################*/
+		  	  /* While waiting for message to come from the other board, LED1 is
+		  	     blinking according to the following pattern: a double flash every half-second */
+		  	  while (UartReady != SET)
+		  	  {
+		  		  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		  	      HAL_Delay(100);
+		  	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		  	      HAL_Delay(100);
+		  	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		  	      HAL_Delay(100);
+		  	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		  	      HAL_Delay(500);
+		  	  }
+
+		  	  /* Reset reception flag */
+		  	  UartReady = RESET;
+
+		  	  if((char *)aRxBuffer == Join_Message){
+		  		  Join_Flag = 1;
+		  		  Still_Connect = 1;
+		  	  }
+	  }
+}
+
+void Check_Connection(){ //Check Connection Status
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
+	HAL_Delay(200);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+NJS=?\r\n"), strlen("AT+NJS=?\r\n"), 1000);
 	HAL_Delay(2000);
 
 }
 
-void Send_First_Data(){
-	HAL_UART_Transmit(&huart1, "AT+SEND=55:SALAM\r\n", sizeof("AT+SEND=55:SALAM\r\n"), 1000);
+void Send_First_Data(){ //First data for getting status and Connection
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
+	HAL_Delay(200);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+SEND=55:Status\r\n"), strlen("AT+SEND=55:SALAM\r\n"), 1000);
 	HAL_Delay(5000);
-	HAL_UART_Transmit(&huart1, "AT+SEND=55:SALAM\r\n", sizeof("AT+SEND=55:SALAM\r\n"), 1000);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT\r\n"), strlen("AT\r\n"), 1000);
+	HAL_Delay(200);
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+SEND=55:AmConnected\r\n"), strlen("AT+SEND=55:SALAM\r\n"), 1000);
 	HAL_Delay(5000);
 }
 
+void Recive_Data(){ //For reciveint data from lora
+	HAL_UART_Transmit(&huart1,(uint8_t *)("AT+RECV=?\r\n"), strlen("AT+RECV=?\r\n"), 1000);
+	HAL_Delay(2000);
+
+	  /*##-1- Put UART peripheral in reception process ###########################*/
+
+	  //Wait for JOINED from Lora
+	  if(HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+
+	  /*##-2- Wait for the end of the Receive ###################################*/
+	  /* While waiting for message to come from the other board, LED1 is
+	     blinking according to the following pattern: a double flash every half-second */
+	  while (UartReady != SET)
+	  {
+		  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(100);
+	  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	      HAL_Delay(500);
+	  }
+
+	  /* Reset reception flag */
+	  UartReady = RESET;
+
+	  if((char *)aRxBuffer == Lora_Port_Number){
+		  __NOP();
+	  }
+	  else {
+		  Message = (char *)aRxBuffer;
+	  }
+
+}
+
+
+void USART1_IRQHandler(void)
+{
+//  /* USER CODE BEGIN USART1_IRQn 0 */
+//
+//  /* USER CODE END USART1_IRQn 0 */
+//  HAL_UART_IRQHandler(&huart1);
+//  /* USER CODE BEGIN USART1_IRQn 1 */
+//
+//  /*****************************************************/
+//	if(aRxBuffer == 'J' && join_state_JOINED == 0 && wait_joint == 1){
+//		join_state_JOINED = 1;
+//	}
+//	else if(aRxBuffer == 'O' && join_state_JOINED == 1 && wait_joint == 1){
+//		join_state_JOINED = 2;
+//	}
+//	else if(aRxBuffer == 'I' && join_state_JOINED == 2 && wait_joint == 1){
+//		join_state_JOINED = 3;
+//	}
+//	else if(aRxBuffer == 'N' && join_state_JOINED == 3 && wait_joint == 1){
+//		join_state_JOINED = 4;
+//	}
+//	else if(aRxBuffer == 'E' && join_state_JOINED == 4 && wait_joint == 1){
+//		join_state_JOINED = 5;
+//    }
+//	else if(aRxBuffer == 'D' && join_state_JOINED == 5 && wait_joint == 1){
+//		join_state_JOINED = 0;
+//		Join_Flag = 1;
+//    }
+//	else if(wait_joint == 1){
+//		join_state_JOINED = 0;
+//	}
+//  /*****************************************************/
+//	if(aRxBuffer == '1\r' && Still_Connect == 0){
+//		Still_Connect = 1;
+//	}
+//  /*****************************************************/
+//	if(aRxBuffer == '+' && join_state_EVT == 0){
+//		join_state_EVT = 1;
+//	}
+//	else if(aRxBuffer == 'E' && join_state_EVT == 1){
+//		join_state_EVT = 2;
+//	}
+//	else if(aRxBuffer == 'V' && join_state_EVT == 2){
+//		join_state_EVT = 3;
+//	}
+//	else if(aRxBuffer == 'T' && join_state_EVT == 3){
+//		join_state_EVT = 4;
+//	}
+//	else if(aRxBuffer == ':' && join_state_EVT == 4){
+//		join_state_EVT = 5;
+//    }
+//	else if(aRxBuffer == 'D' && join_state_EVT == 5){
+//		join_state_EVT = 6;
+//    }
+//	else if(wait_joint == 1){
+//		join_state_JOINED = 0;
+//	}
+//
+////	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+//  /* USER CODE END USART1_IRQn 1 */
+}
+
+/********************************************************************/
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	//Set UartReady
+	UartReady = SET;
+	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+}
 /* USER CODE END 4 */
 
 /**
@@ -344,7 +535,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-
+	while(1){
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		HAL_Delay(2000);
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 

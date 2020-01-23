@@ -1,0 +1,11 @@
+main.c:283:6:Uart_Transmit_AT_Init	16	static
+main.c:401:6:Check_Connection	8	static
+main.c:409:6:Send_First_Data	16	static
+main.c:460:6:USART1_IRQHandler	0	static
+main.c:523:6:HAL_UART_RxCpltCallback	0	static
+main.c:534:6:Error_Handler	8	static
+main.c:164:6:SystemClock_Config	72	static
+main.c:303:6:Wait_For_Join	16	static
+main.c:337:6:Wait_For_ConnectionStatus	24	static
+main.c:420:6:Recive_Data	16	static,ignoring_inline_asm
+main.c:86:5:main	40	static

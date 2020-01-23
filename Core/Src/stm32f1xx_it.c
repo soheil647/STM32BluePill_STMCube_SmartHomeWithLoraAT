@@ -198,20 +198,57 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles EXTI line[9:5] interrupts.
+  */
+void EXTI9_5_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI9_5_IRQn 0 */
+
+  /* USER CODE END EXTI9_5_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_6);
+  /* USER CODE BEGIN EXTI9_5_IRQn 1 */
+  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+  /* USER CODE END EXTI9_5_IRQn 1 */
+}
+
+/**
   * @brief This function handles USART1 global interrupt.
   */
 //void USART1_IRQHandler(void)
 //{
-//  /* USER CODE BEGIN USART1_IRQn 0 */
-//
-//  /* USER CODE END USART1_IRQn 0 */
+  /* USER CODE BEGIN USART1_IRQn 0 */
+////
+  /* USER CODE END USART1_IRQn 0 */
 //  HAL_UART_IRQHandler(&huart1);
-//  /* USER CODE BEGIN USART1_IRQn 1 */
-////	if(Buffer_rx == (uint8_t*)("JOIN")){
-////		while(1);
-////	}
+  /* USER CODE BEGIN USART1_IRQn 1 */
+//
+//  /*****************************************************/
+//	if(Buffer_rx == 'J' && join_state == 0 && wait_joint == 1){
+//		join_state = 1;
+//	}
+//	else if(Buffer_rx == 'O' && join_state == 1 && wait_joint == 1){
+//		join_state = 2;
+//	}
+//	else if(Buffer_rx == 'I' && join_state == 2 && wait_joint == 1){
+//		join_state = 3;
+//	}
+//	else if(Buffer_rx == 'N' && join_state == 3 && wait_joint == 1){
+//		join_state = 4;
+//	}
+//	else if(Buffer_rx == 'E' && join_state == 4 && wait_joint == 1){
+//		join_state = 5;
+//    }
+//	else if(Buffer_rx == 'D' && join_state == 5 && wait_joint == 1){
+//		join_state = 0;
+//		Flag_Connected = 1;
+//    }
+//	else if(wait_joint == 1){
+//		join_state = 0;
+//	}
+//  /*****************************************************/
+//
 //	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-//  /* USER CODE END USART1_IRQn 1 */
+  /* USER CODE END USART1_IRQn 1 */
 //}
 
 /* USER CODE BEGIN 1 */
